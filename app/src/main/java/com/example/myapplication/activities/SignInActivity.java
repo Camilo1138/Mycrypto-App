@@ -16,6 +16,7 @@ import com.example.myapplication.R;
 import android.app.ProgressDialog;
 import android.content.Intent;
 import android.os.Bundle;
+import android.util.Log;
 import android.widget.Button;
 import android.widget.EditText;
 import android.widget.Toast;
@@ -25,6 +26,8 @@ import androidx.appcompat.app.AppCompatActivity;
 import com.example.myapplication.R;
 import com.google.firebase.auth.FirebaseAuth;
 import com.google.firebase.auth.FirebaseUser;
+import com.google.firebase.firestore.FirebaseFirestore;
+import com.google.firebase.messaging.FirebaseMessaging;
 
 public class SignInActivity extends AppCompatActivity {
 
@@ -65,7 +68,22 @@ public class SignInActivity extends AppCompatActivity {
                     progress.dismiss();
                     if (task.isSuccessful()) {
                         FirebaseUser user = FirebaseAuth.getInstance().getCurrentUser();
-                        Toast.makeText(this, "Bienvenido", Toast.LENGTH_SHORT).show();
+                        if (user == null) return;
+
+                        // 🔹 Obtener y guardar token FCM
+                        FirebaseMessaging.getInstance().getToken()
+                                .addOnCompleteListener(tokenTask -> {
+                                    if (tokenTask.isSuccessful()) {
+                                        String fcmToken = tokenTask.getResult();
+                                        if (fcmToken != null) {
+                                            FirebaseFirestore.getInstance()
+                                                    .collection("usuarios")
+                                                    .document(user.getUid())
+                                                    .update("fcmToken", fcmToken);
+                                        }
+                                    }
+                                });
+
                         startActivity(new Intent(SignInActivity.this, ChatListActivity.class));
                         finish();
                     } else {

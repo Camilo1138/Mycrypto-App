@@ -15,7 +15,7 @@ public class User {
     private boolean isHacked = false;
     private String bigInteger1;
     private String bigInteger2;// ¿Fue hackeado? (para el modo ataque)
-
+    private String fcmToken;
 
     // Constructor para registro
 
@@ -23,6 +23,25 @@ public class User {
     public User() {
     }
 
+    public String getFcmToken() {
+        return fcmToken;
+    }
+
+    public void setFcmToken(String fcmToken) {
+        this.fcmToken = fcmToken;
+    }
+
+    public User(String id, String name, String email, String bigInteger1,
+                String bigInteger2, String publicKey, String privateKeyEncrypted, String fcmToken) {
+        this.id = id;
+        this.name = name;
+        this.email = email;
+        this.bigInteger1 = bigInteger1;
+        this.bigInteger2 = bigInteger2;
+        this.publicKey = publicKey;
+        this.privateKeyEncrypted = privateKeyEncrypted;
+        this.fcmToken = fcmToken;
+    }
     public User(String id, String name, String email, String bigInteger1,
                 String bigInteger2, String publicKey, String privateKeyEncrypted) {
         this.id = id;

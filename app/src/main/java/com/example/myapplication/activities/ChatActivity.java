@@ -48,6 +48,8 @@ import com.google.firebase.firestore.FirebaseFirestore;
 import com.google.firebase.firestore.FirebaseFirestoreException;
 import com.google.firebase.firestore.ListenerRegistration;
 import com.google.firebase.firestore.Query;
+import com.google.firebase.functions.FirebaseFunctions;
+import com.google.firebase.messaging.FirebaseMessaging;
 
 import java.math.BigInteger;
 import java.nio.charset.StandardCharsets;
@@ -66,131 +68,165 @@ import javax.crypto.SecretKey;
 import javax.crypto.spec.SecretKeySpec;
 
 public class ChatActivity extends AppCompatActivity {
-        private RecyclerView messagesRecyclerView;
-        private EditText messageEditText;
-        private ImageButton sendButton;
-        private MessagesAdapter messagesAdapter;
-        private String chatId, currentUserId, otherUserId, otherUserPublicKey;
-        private FirebaseFirestore db;
-        private ListenerRegistration messagesListener;
+    private RecyclerView messagesRecyclerView;
+    private EditText messageEditText;
+    private ImageButton sendButton;
+    private MessagesAdapter messagesAdapter;
+    private String chatId, currentUserId, otherUserId, otherUserPublicKey;
+    private FirebaseFirestore db;
+    private ListenerRegistration messagesListener;
 
-        @Override
-        protected void onCreate(Bundle savedInstanceState) {
-            super.onCreate(savedInstanceState);
-            setContentView(R.layout.activity_chat);
+    @Override
+    protected void onCreate(Bundle savedInstanceState) {
+        super.onCreate(savedInstanceState);
+        setContentView(R.layout.activity_chat);
 
-            // Obtener datos del intent
-            chatId = getIntent().getStringExtra("chatId");
-            otherUserId = getIntent().getStringExtra("otherUserId");
-            otherUserPublicKey = getIntent().getStringExtra("otherUserPublicKey");
-            currentUserId = FirebaseAuth.getInstance().getCurrentUser().getUid();
-            db = FirebaseFirestore.getInstance();
+        // Obtener datos del intent
+        chatId = getIntent().getStringExtra("chatId");
+        otherUserId = getIntent().getStringExtra("otherUserId");
+        otherUserPublicKey = getIntent().getStringExtra("otherUserPublicKey");
+        currentUserId = FirebaseAuth.getInstance().getCurrentUser().getUid();
+        db = FirebaseFirestore.getInstance();
 
-            // Configurar toolbar
-            Toolbar toolbar = findViewById(R.id.toolbar);
-            setSupportActionBar(toolbar);
-            if (getSupportActionBar() != null) {
-                getSupportActionBar().setTitle(getIntent().getStringExtra("otherUserName"));
-                getSupportActionBar().setDisplayHomeAsUpEnabled(true);
-            }
+        // Configurar toolbar
+        Toolbar toolbar = findViewById(R.id.toolbar);
+        setSupportActionBar(toolbar);
+        if (getSupportActionBar() != null) {
+            getSupportActionBar().setTitle(getIntent().getStringExtra("otherUserName"));
+            getSupportActionBar().setDisplayHomeAsUpEnabled(true);
+        }
 
-            // Configurar RecyclerView
-            messagesRecyclerView = findViewById(R.id.messagesRecyclerView);
-            messagesRecyclerView.setLayoutManager(new LinearLayoutManager(this));
-            messagesAdapter = new MessagesAdapter(currentUserId);
-            messagesRecyclerView.setAdapter(messagesAdapter);
+        // Configurar RecyclerView
+        messagesRecyclerView = findViewById(R.id.messagesRecyclerView);
+        messagesRecyclerView.setLayoutManager(new LinearLayoutManager(this));
+        messagesAdapter = new MessagesAdapter(currentUserId);
+        messagesRecyclerView.setAdapter(messagesAdapter);
 
-            // Configurar input y botón
-            messageEditText = findViewById(R.id.messageEditText);
-            sendButton = findViewById(R.id.sendButton);
-            sendButton.setOnClickListener(v -> {
-                sendMessage();
-                loadMessages();
-            });
-
-            // Cargar mensajes
+        // Configurar input y botón
+        messageEditText = findViewById(R.id.messageEditText);
+        sendButton = findViewById(R.id.sendButton);
+        sendButton.setOnClickListener(v -> {
+            sendMessage();
             loadMessages();
+        });
 
-            PrivateKey privateKey = null;
-            try {
-                privateKey = SecureStorage.getPrivateKey(getApplicationContext());
-                if (privateKey == null) {
-                    Toast.makeText(this, "⚠️ No se encontró clave privada en este dispositivo.\nNo podrás leer mensajes cifrados.", Toast.LENGTH_LONG).show();
-                }
-            } catch (SecureStorageException e) {
-                Log.e("SecureStorage", "Error accediendo a la clave privada", e);
-                Toast.makeText(this, "⚠️ Error al acceder a la clave privada.\nNo podrás leer mensajes cifrados.", Toast.LENGTH_LONG).show();
-            }
+        // Cargar mensajes
+        loadMessages();
 
-            // Verifica la disponibilidad de claves al iniciar:
-            if (!hasAESKey()) {
-                try {
-                    SecureStorage.getAESKey();
-                } catch (Exception e) {
-                    Log.e("Security", "Failed to generate AES key", e);
-                    // Mostrar alerta al usuario sobre funcionalidad limitada
-                }
+        PrivateKey privateKey = null;
+        try {
+            privateKey = SecureStorage.getPrivateKey(getApplicationContext());
+            if (privateKey == null) {
+                Toast.makeText(this, "⚠️ No se encontró clave privada en este dispositivo.\nNo podrás leer mensajes cifrados.", Toast.LENGTH_LONG).show();
             }
-        }
-        @Override
-        public boolean onOptionsItemSelected(@NonNull MenuItem item) {
-            if (item.getItemId() == android.R.id.home) {
-                finish(); // o puedes usar onBackPressed() si estás en una API anterior a 33
-                return true;
-            }
-            return super.onOptionsItemSelected(item);
+        } catch (SecureStorageException e) {
+            Log.e("SecureStorage", "Error accediendo a la clave privada", e);
+            Toast.makeText(this, "⚠️ Error al acceder a la clave privada.\nNo podrás leer mensajes cifrados.", Toast.LENGTH_LONG).show();
         }
 
-        private void sendMessage() {
-            String content = messageEditText.getText().toString().trim();
-            if (content.isEmpty()) return;
-
+        // Verifica la disponibilidad de claves al iniciar:
+        if (!hasAESKey()) {
             try {
-                // 1. Validar clave pública del destinatario
-                if (otherUserPublicKey == null || otherUserPublicKey.isEmpty()) {
-                    throw new IllegalArgumentException("La clave pública del destinatario no está disponible.");
-                }
-
-                // 2. Convertir clave pública personalizada a java.security.PublicKey
-                com.example.myapplication.utils.PublicKey customKey = com.example.myapplication.utils.PublicKey.fromString(otherUserPublicKey);
-                java.security.PublicKey standardPublicKey = KeyConversionUtils.toJavaKey(customKey);
-
-                // 3. Generar clave AES (128 bits)
-                SecretKey aesKey = AESUtils.generateKey();
-
-                // 4. Cifrar el mensaje con AES
-                String encryptedMessage = AESUtils.encrypt(content, aesKey);
-
-                // 5. Obtener bytes de la clave AES (16 bytes para AES-128)
-                byte[] aesKeyBytes = aesKey.getEncoded();
-
-                // 6. Cifrar clave AES con RSA (solo los bytes, no base64)
-                String encryptedAESKey = RSAUtils.encryptAESKey(aesKeyBytes, customKey);
-
-                // 7. Crear y guardar mensaje en Firestore
-                ChatMessage message = new ChatMessage();
-                message.setChatId(db.collection("chats").document(chatId));
-                message.setSenderId(db.collection("usuarios").document(currentUserId));
-                message.setContent(encryptedMessage);
-                message.setEncryptedKey(encryptedAESKey);
-                message.setTimestamp(new Date());
-                message.setStatus("sent");
-
-                db.collection("messages").add(message)
-                        .addOnSuccessListener(docRef -> {
-                            messageEditText.setText("");
-                            updateChatLastMessage("Nuevo mensaje cifrado");
-                        })
-                        .addOnFailureListener(e -> {
-                            Toast.makeText(this, "Error al enviar mensaje: " + e.getMessage(), Toast.LENGTH_SHORT).show();
-                            Log.e("Chat", "Fallo al guardar mensaje", e);
-                        });
-
+                SecureStorage.getAESKey();
             } catch (Exception e) {
-                Toast.makeText(this, "Error: " + e.getMessage(), Toast.LENGTH_LONG).show();
-                Log.e("Chat", "Error en sendMessage", e);
+                Log.e("Security", "Failed to generate AES key", e);
+                // Mostrar alerta al usuario sobre funcionalidad limitada
             }
         }
+        // 🔹 Obtener y actualizar token FCM
+        FirebaseMessaging.getInstance().getToken()
+                .addOnCompleteListener(task -> {
+                    if (!task.isSuccessful()) {
+                        Log.e("ChatActivity", "No se pudo obtener token FCM", task.getException());
+                        return;
+                    }
+                    String fcmToken = task.getResult();
+                    if (fcmToken != null) {
+                        db.collection("usuarios").document(currentUserId)
+                                .update("fcmToken", fcmToken)
+                                .addOnSuccessListener(aVoid ->
+                                        Log.d("ChatActivity", "Token FCM actualizado correctamente"))
+                                .addOnFailureListener(e ->
+                                        Log.e("ChatActivity", "Error al actualizar token FCM", e));
+                    }
+                });
+    }
+
+    @Override
+    public boolean onOptionsItemSelected(@NonNull MenuItem item) {
+        if (item.getItemId() == android.R.id.home) {
+            finish(); // o puedes usar onBackPressed() si estás en una API anterior a 33
+            return true;
+        }
+        return super.onOptionsItemSelected(item);
+    }
+
+    private void sendMessage() {
+        String content = messageEditText.getText().toString().trim();
+        if (content.isEmpty()) return;
+
+        try {
+            // 1. Validar clave pública del destinatario
+            if (otherUserPublicKey == null || otherUserPublicKey.isEmpty()) {
+                throw new IllegalArgumentException("La clave pública del destinatario no está disponible.");
+            }
+
+            // 2. Convertir clave pública personalizada a java.security.PublicKey
+            com.example.myapplication.utils.PublicKey customKey = com.example.myapplication.utils.PublicKey.fromString(otherUserPublicKey);
+            java.security.PublicKey standardPublicKey = KeyConversionUtils.toJavaKey(customKey);
+
+            // 3. Generar clave AES (128 bits)
+            SecretKey aesKey = AESUtils.generateKey();
+
+            // 4. Cifrar el mensaje con AES
+            String encryptedMessage = AESUtils.encrypt(content, aesKey);
+
+            // 5. Obtener bytes de la clave AES (16 bytes para AES-128)
+            byte[] aesKeyBytes = aesKey.getEncoded();
+
+            // 6. Cifrar clave AES con RSA (solo los bytes, no base64)
+            String encryptedAESKey = RSAUtils.encryptAESKey(aesKeyBytes, customKey);
+
+            // 7. Crear y guardar mensaje en Firestore
+            ChatMessage message = new ChatMessage();
+            message.setChatId(db.collection("chats").document(chatId));
+            message.setSenderId(db.collection("usuarios").document(currentUserId));
+            message.setContent(encryptedMessage);
+            message.setEncryptedKey(encryptedAESKey);
+            message.setTimestamp(new Date());
+            message.setStatus("sent");
+
+            db.collection("messages").add(message)
+                    .addOnSuccessListener(docRef -> {
+                        messageEditText.setText("");
+                        updateChatLastMessage("Nuevo mensaje cifrado");
+
+                        // 🔹 Después de guardar, obtener el fcmToken del receptor
+                        db.collection("usuarios").document(otherUserId)
+                                .get()
+                                .addOnSuccessListener(doc -> {
+                                    if (doc.exists()) {
+                                        String fcmToken = doc.getString("fcmToken");
+                                        if (fcmToken != null && !fcmToken.isEmpty()) {
+                                            sendPushNotification(
+                                                    fcmToken,
+                                                    "Nuevo mensaje",
+                                                    "Tienes un mensaje cifrado de " + currentUserId
+                                            );
+                                        }
+                                    }
+                                });
+                    })
+                    .addOnFailureListener(e -> {
+                        Toast.makeText(this, "Error al enviar mensaje: " + e.getMessage(), Toast.LENGTH_SHORT).show();
+                        Log.e("Chat", "Fallo al guardar mensaje", e);
+                    });
+
+        } catch (Exception e) {
+            Toast.makeText(this, "Error: " + e.getMessage(), Toast.LENGTH_LONG).show();
+            Log.e("Chat", "Error en sendMessage", e);
+        }
+    }
 
 
     private void loadMessages() {
@@ -267,21 +303,21 @@ public class ChatActivity extends AppCompatActivity {
                     .show();
         });
     }
-        private void updateChatLastMessage(String lastMessage) {
-            db.collection("chats").document(chatId)
-                    .update(
-                            "lastMessage", lastMessage,
-                            "lastUpdate", FieldValue.serverTimestamp()
-                    );
-        }
+    private void updateChatLastMessage(String lastMessage) {
+        db.collection("chats").document(chatId)
+                .update(
+                        "lastMessage", lastMessage,
+                        "lastUpdate", FieldValue.serverTimestamp()
+                );
+    }
 
-        @Override
-        protected void onDestroy() {
-            super.onDestroy();
-            if (messagesListener != null) {
-                messagesListener.remove();
-            }
+    @Override
+    protected void onDestroy() {
+        super.onDestroy();
+        if (messagesListener != null) {
+            messagesListener.remove();
         }
+    }
     private void recoverPrivateKeyFromFirestore(ChatMessage message) {
         runOnUiThread(() ->
                 Toast.makeText(this, "Recuperando clave privada de Firebase...", Toast.LENGTH_SHORT).show());
@@ -417,6 +453,19 @@ public class ChatActivity extends AppCompatActivity {
 
 
         });
+    }
+    private void sendPushNotification(String fcmToken, String title, String body) {
+        FirebaseFunctions functions = FirebaseFunctions.getInstance();
+
+        Map<String, Object> data = new HashMap<>();
+        data.put("fcmToken", fcmToken);
+        data.put("title", title);
+        data.put("body", body);
+
+        functions.getHttpsCallable("sendPushNotification")
+                .call(data)
+                .addOnSuccessListener(result -> Log.d("Push", "Notificación enviada"))
+                .addOnFailureListener(e -> Log.e("Push", "Error al enviar notificación", e));
     }
 
 }

@@ -6,6 +6,7 @@ import java.io.ByteArrayOutputStream;
 import java.math.BigInteger;
 import java.nio.charset.StandardCharsets;
 import java.security.KeyFactory;
+import java.security.SecureRandom;
 import java.security.spec.RSAPrivateKeySpec;
 import java.security.spec.RSAPublicKeySpec;
 import java.util.ArrayList;
@@ -160,6 +161,26 @@ public class RSAUtils {
         } else {
             return abajo;
         }
+    }
+    public static BigInteger generarNumeroConDigitos(int digitos) {
+        SecureRandom random = new SecureRandom();
+
+        // El número más pequeño con 'digitos' dígitos: 10^(digitos-1)
+        BigInteger minimo = BigInteger.TEN.pow(digitos - 1);
+
+        // El número más grande con 'digitos' dígitos: 10^digitos - 1
+        BigInteger maximo = BigInteger.TEN.pow(digitos).subtract(BigInteger.ONE);
+
+        // Rango = max - min
+        BigInteger rango = maximo.subtract(minimo);
+
+        // Número aleatorio dentro del rango + mínimo
+        BigInteger numeroAleatorio;
+        do {
+            numeroAleatorio = new BigInteger(rango.bitLength(), random);
+        } while (numeroAleatorio.compareTo(rango) > 0);
+
+        return numeroAleatorio.add(minimo);
     }
 
     // Convierte una lista de BigInteger a una lista de Strings (para guardar en Firebase)

@@ -35,6 +35,8 @@ android {
 }
 
 dependencies {
+    implementation ("com.google.firebase:firebase-messaging:23.3.0")
+    implementation ("com.google.firebase:firebase-functions-ktx")
     implementation(platform(libs.firebase.bom))
     implementation(libs.firebase.crashlytics)
     implementation(libs.firebase.firestore)

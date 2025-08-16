@@ -1,26 +1,16 @@
 package com.example.myapplication.activities;
 
-import static android.content.ContentValues.TAG;
-
 import android.app.ProgressDialog;
 import android.content.Intent;
 import android.os.Build;
 import android.os.Bundle;
-import android.util.Base64;
 import android.util.Log;
 import android.widget.Button;
 import android.widget.EditText;
 import android.widget.Toast;
-
-import androidx.activity.EdgeToEdge;
 import androidx.appcompat.app.AppCompatActivity;
-import androidx.core.graphics.Insets;
-import androidx.core.view.ViewCompat;
-import androidx.core.view.WindowInsetsCompat;
-
 import com.example.myapplication.utils.PrivateKey;
 import com.example.myapplication.utils.SecureStorage;
-
 import com.example.myapplication.R;
 import com.example.myapplication.models.User;
 import com.example.myapplication.utils.AESUtil;
@@ -30,9 +20,10 @@ import com.example.myapplication.utils.SecureStorageException;
 import com.google.firebase.auth.FirebaseAuth;
 import com.google.firebase.auth.FirebaseUser;
 import com.google.firebase.firestore.FirebaseFirestore;
+import com.google.firebase.messaging.FirebaseMessaging;
 
 import java.math.BigInteger;
-import java.security.KeyPair;
+
 
 public class LoginActivity extends AppCompatActivity {
     private EditText etName, etPassword,etEmail, etP, etQ;
@@ -58,31 +49,43 @@ public class LoginActivity extends AppCompatActivity {
             String email = etEmail.getText().toString().trim();
             String bigInt1Str = etP.getText().toString().trim();
             String bigInt2Str = etQ.getText().toString().trim();
-            BigInteger p = new BigInteger(etP.getText().toString());
-            BigInteger q = new BigInteger(etQ.getText().toString());
+            int num1 = Integer.parseInt(bigInt1Str);
+            int num2 = Integer.parseInt(bigInt2Str);
+            BigInteger p = RSAUtils.generarNumeroConDigitos(num1);
+            BigInteger q =RSAUtils.generarNumeroConDigitos(num2);
 
             // Al inicio de la validación, antes de procesar los números
-            if (etP.getText().toString().length() < 150 || etQ.getText().toString().length() < 150) {
-                etP.setError("Debe tener al menos 150 dígitos");
-                etQ.setError("Debe tener al menos 150 dígitos");
+            if (num1 < 150 || num2 < 150) {
+                etP.setError("p Debe tener al menos 150 dígitos");
+                etQ.setError("q Debe tener al menos 150 dígitos");
+                return;
+            }
+            if (num1 > 300 || num2 > 300) {
+                etP.setError(" P Debe tener menos de 300 dígitos");
+                etQ.setError(" q Debe tener menos de 300 dígitos");
                 return;
             }
             if (!RSAUtils.esPrimo(p)) {
-                Toast.makeText(this, "p no es primo, se cambiará por el primo más cercano", Toast.LENGTH_SHORT).show();
                 p = RSAUtils.primoMasCercano(p);
             }
 
             if (!RSAUtils.esPrimo(q)) {
-                Toast.makeText(this, "q no es primo, se cambiará por el primo más cercano", Toast.LENGTH_SHORT).show();
                 q = RSAUtils.primoMasCercano(q);
             }
 
             if (p.equals(q)) {
-                Toast.makeText(this, "p y q no deben ser iguales", Toast.LENGTH_SHORT).show();
-                return;
+                p = p.add(BigInteger.ONE);
+                if (!RSAUtils.esPrimo(p)) {
+                    p = RSAUtils.primoMasCercano(p);
+                }
             }
 
+
 // Convertir a String
+            if (bigInt1Str.isEmpty() || bigInt2Str.isEmpty()) {
+                Toast.makeText(this, "Ingresa la cantidad de dígitos para p y q", Toast.LENGTH_SHORT).show();
+                return;
+            }
 
 
             if (name.isEmpty() || email.isEmpty() ||
@@ -93,11 +96,11 @@ public class LoginActivity extends AppCompatActivity {
 
             try {
                 // Convertir Strings a BigIntegers
-                BigInteger bigInt1 = new BigInteger(bigInt1Str);
-                BigInteger bigInt2 = new BigInteger(bigInt2Str);
+                //BigInteger bigInt1 = new BigInteger(bigInt1Str);
+                //BigInteger bigInt2 = new BigInteger(bigInt2Str);
                 String encryptionKey = name+password;
                 // Registrar usuario
-                registrarUsuario(name, email, password, bigInt1, bigInt2, encryptionKey);
+                registrarUsuario(name, email, password, p, q, encryptionKey);
 
             } catch (NumberFormatException e) {
                 Toast.makeText(this, "Los valores numéricos no son válidos", Toast.LENGTH_SHORT).show();
@@ -165,6 +168,23 @@ public class LoginActivity extends AppCompatActivity {
                                     .addOnSuccessListener(aVoid -> {
                                         progress.dismiss();  // ✅ Cerrar al completar
                                         Log.d("Registro", "Usuario guardado en Firestore");
+                                        // 🔹 Obtener token FCM
+                                        FirebaseMessaging.getInstance().getToken()
+                                                .addOnCompleteListener(tokenTask -> {
+                                                    if (tokenTask.isSuccessful()) {
+                                                        String fcmToken = tokenTask.getResult();
+                                                        if (fcmToken != null) {
+                                                            db.collection("usuarios").document(userId)
+                                                                    .update("fcmToken", fcmToken)
+                                                                    .addOnSuccessListener(aVoid1 ->
+                                                                            Log.d("Registro", "Token FCM guardado"))
+                                                                    .addOnFailureListener(e ->
+                                                                            Log.e("Registro", "Error guardando token FCM", e));
+                                                        }
+                                                    } else {
+                                                        Log.e("Registro", "No se pudo obtener token FCM", tokenTask.getException());
+                                                    }
+                                                });
                                         startActivity(new Intent(LoginActivity.this, ChatListActivity.class));
                                         finish();
                                     })

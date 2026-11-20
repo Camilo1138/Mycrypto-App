@@ -1,117 +1,161 @@
-# ProyectoMD – Aplicación de Mensajería Segura
+# My CryptoApp
 
-Proyecto de aplicación de mensajería desarrollado en **Java/Android** que implementa **cifrado híbrido utilizando RSA y AES** para proteger los mensajes enviados entre usuarios.
+Aplicación Android de mensajería cifrada desarrollada en Java. Permite registrar e iniciar sesión con Firebase Authentication, consultar usuarios, mantener conversaciones y enviar mensajes protegidos mediante cifrado híbrido con RSA y AES.
 
-La aplicación permite enviar y recibir mensajes cifrados que se almacenan en **Firebase**, asegurando que el contenido de los mensajes esté protegido antes de ser guardado en la base de datos.
+> Proyecto académico: la implementación sirve para estudiar criptografía aplicada y comunicación segura. Antes de utilizarlo en producción se deben revisar las reglas de seguridad, la gestión de claves, la autenticación y la distribución de claves privadas.
 
----
+## Funcionalidades
 
-## Características principales
+- Registro e inicio de sesión con correo y contraseña.
+- Lista de usuarios y conversaciones registradas.
+- Envío y recepción de mensajes en tiempo real mediante Cloud Firestore.
+- Cifrado híbrido de cada mensaje:
+  - AES-GCM para el contenido del mensaje.
+  - RSA para cifrar la clave AES.
+- Almacenamiento seguro local de la clave privada mediante Android Keystore.
+- Recuperación de respaldo de la clave privada desde Firestore.
+- Tokens de Firebase Cloud Messaging asociados a cada usuario.
+- Notificaciones locales al recibir mensajes remotos.
+- Registro de fallos con Firebase Crashlytics.
 
-* 📩 Envío de mensajes entre usuarios
-* 🔐 Cifrado de mensajes utilizando **AES**
-* 🔑 Intercambio seguro de claves usando **RSA**
-* ☁️ Almacenamiento de mensajes en **Firebase**
-* 📱 Aplicación móvil desarrollada para **Android**
+## Seguridad implementada
 
----
+1. Al registrar un usuario se generan componentes RSA personalizados y se construye un par de claves pública y privada.
+2. La clave pública se publica en el documento del usuario para permitir que otros usuarios cifren mensajes dirigidos a él.
+3. La clave privada se guarda localmente con Android Keystore y también se conserva cifrada como respaldo en Firestore.
+4. Para cada mensaje se genera una clave AES diferente.
+5. El texto se cifra con `AES/GCM/NoPadding`.
+6. La clave AES se cifra con la clave pública RSA del receptor.
+7. Firestore almacena el contenido cifrado, la clave AES cifrada y los metadatos necesarios.
+8. El receptor descifra la clave AES con su clave privada RSA y después descifra el mensaje.
 
-## Arquitectura de seguridad
+## Tecnologías
 
-La aplicación utiliza un **sistema de cifrado híbrido**, combinando RSA y AES para mejorar la seguridad y eficiencia.
+- Java 11
+- Android SDK 35
+- Android Gradle Plugin 8.7.2
+- AndroidX AppCompat, Activity y ConstraintLayout
+- Material Components
+- Firebase Authentication
+- Cloud Firestore
+- Firebase Cloud Messaging
+- Firebase Functions
+- Firebase Crashlytics
+- Android Security Crypto
+- Gradle Wrapper
 
-### Proceso de cifrado
+## Requisitos
 
-1. El mensaje del usuario se cifra utilizando **AES** (cifrado simétrico).
-2. La clave AES utilizada para cifrar el mensaje se cifra utilizando **RSA** (clave pública del receptor).
-3. El mensaje cifrado y la clave AES cifrada se envían y almacenan en **Firebase**.
+- Android Studio con SDK de Android 35.
+- JDK compatible con Java 11.
+- Un proyecto de Firebase.
+- Android SDK API 28 o superior en el emulador o dispositivo.
+- Conexión a Internet.
 
-### Proceso de descifrado
+## Configuración
 
-1. El receptor obtiene el mensaje desde Firebase.
-2. La clave AES es descifrada utilizando su **clave privada RSA**.
-3. Con la clave AES recuperada se descifra el mensaje original.
+### 1. Clonar el repositorio
 
-Este enfoque permite:
-
-* Mayor **seguridad**
-* Mejor **rendimiento** que usar solo RSA
-* Protección de datos incluso si la base de datos es comprometida
-
----
-
-## Tecnologías utilizadas
-
-* **Java**
-* **Android SDK**
-* **Firebase Realtime Database / Firestore**
-* **RSA Encryption**
-* **AES Encryption**
-
----
-
-## Estructura general del proyecto
-
-El proyecto está organizado en diferentes módulos que manejan:
-
-* Interfaz de usuario
-* Lógica de mensajería
-* Procesos de cifrado y descifrado
-* Conexión con Firebase
-
-```
-app
- ├── activities
- ├── encryption
- │    ├── RSA
- │    └── AES
- ├── firebase
- └── models
+```bash
+git clone https://github.com/Camilo1138/Mycrypto-App.git
+cd Mycrypto-App
 ```
 
----
+### 2. Abrir Android Studio
 
-## Instalación
+Selecciona **Open** y abre la carpeta raíz del proyecto.
 
-1. Clonar el repositorio
+Android Studio descargará las dependencias de Gradle durante la primera sincronización.
 
+### 3. Configurar Firebase
+
+1. Crea un proyecto en Firebase.
+2. Registra una aplicación Android con el identificador:
+
+   ```text
+   com.example.myapplication
+   ```
+
+3. Descarga el archivo `google-services.json`.
+4. Colócalo en la carpeta `app/`.
+5. Habilita en Firebase Console:
+   - Authentication con el proveedor **Email/Password**.
+   - Cloud Firestore.
+   - Cloud Messaging.
+   - Crashlytics, si deseas recopilar informes de fallos.
+
+El proyecto ya contiene la configuración de ejemplo de Firebase en `app/google-services.json`. Debes sustituirla por la configuración de tu propio proyecto antes de ejecutar la aplicación.
+
+### 4. Configurar las colecciones de Firestore
+
+La aplicación utiliza las siguientes referencias principales:
+
+- `usuarios`: perfil de usuario, clave pública y privada cifrada, correo y token FCM.
+- `chats`: identificadores de los participantes y datos generales de la conversación.
+- `chats/{chatId}/mensajes`: contenido cifrado, clave cifrada, remitente y fecha.
+
+Los nombres exactos y las reglas de acceso dependen de la estructura almacenada por la aplicación. Para un entorno real, configura reglas de Firestore que impidan que usuarios no autorizados puedan leer o modificar documentos ajenos.
+
+### 5. Configurar la función de notificaciones
+
+La aplicación invoca una función HTTPS de Firebase llamada `sendPushNotification`. Esta función no está incluida en este repositorio y debe implementarse y desplegarse en tu proyecto de Firebase antes de usar las notificaciones remotas.
+
+### 6. Ejecutar
+
+Desde Android Studio, selecciona un dispositivo físico o un emulador con API 28 o superior y ejecuta la configuración `app`.
+
+También puedes compilar desde la raíz del proyecto:
+
+**Windows**
+
+```bat
+gradlew.bat assembleDebug
 ```
-git clone https://github.com/Camilo1138/ProyectoMD
+
+**Linux/macOS**
+
+```bash
+./gradlew assembleDebug
 ```
 
-2. Abrir el proyecto en **Android Studio**
+El APK de prueba se genera en `app/build/outputs/apk/debug/app-debug.apk`.
 
-3. Configurar Firebase:
+## Uso
 
-   * Crear un proyecto en Firebase
-   * Descargar el archivo `google-services.json`
-   * Colocarlo en la carpeta `app/`
+1. Crea una cuenta desde la pantalla de registro.
+2. Inicia sesión con el correo y la contraseña.
+3. Selecciona un usuario de la lista.
+4. Escribe un mensaje.
+5. El remitente cifra el mensaje antes de guardarlo en Firestore.
+6. El receptor descifra el contenido con su clave privada.
 
-4. Ejecutar la aplicación en un emulador o dispositivo Android.
+## Estructura del proyecto
 
----
+```text
+app/
+├── src/main/java/com/example/myapplication/
+│   ├── activities/   Pantallas y navegación
+│   ├── adapters/     Adaptadores de usuarios, chats y mensajes
+│   ├── models/       Modelos usados por la interfaz y Firestore
+│   └── utils/        RSA, AES, almacenamiento seguro y FCM
+└── src/main/res/     Layouts, recursos gráficos y configuración visual
+```
 
-## Uso de la aplicación
+```text
+build.gradle.kts
+settings.gradle.kts
+gradle/libs.versions.toml
+gradlew / gradlew.bat
+app/google-services.json
+```
 
-1. Crear o iniciar sesión en una cuenta.
-2. Seleccionar un usuario para enviar mensajes.
-3. Escribir el mensaje.
-4. El mensaje se cifra automáticamente antes de enviarse.
-5. El receptor lo descifra al recibirlo.
+## Pruebas
 
----
+El proyecto incluye plantillas de pruebas unitarias e instrumentadas:
 
-## Objetivo del proyecto
+```bash
+./gradlew test
+./gradlew connectedAndroidTest
+```
 
-Este proyecto fue desarrollado con fines académicos para explorar:
-
-* **Criptografía aplicada**
-* **Comunicación segura**
-* **Desarrollo de aplicaciones Android**
-* **Uso de Firebase como backend**
-
----
-
-## Autor
-
-Camilo Arboleda
+`connectedAndroidTest` requiere un dispositivo o emulador conectado.
